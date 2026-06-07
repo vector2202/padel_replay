@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:gal/gal.dart';
 
 class HighlightsScreen extends StatefulWidget {
   const HighlightsScreen({super.key});
@@ -120,6 +121,7 @@ class _HighlightCardState extends State<HighlightCard> {
   bool _initialized = false;
   bool _showVideo = false;
   bool _isSharing = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -129,31 +131,70 @@ class _HighlightCardState extends State<HighlightCard> {
     }
   }
 
+  Future<String?> _downloadVideo() async {
+    final videoUrl = widget.item['video_url_vertical'] as String?;
+    if (videoUrl == null) return null;
+
+    final response = await http.get(Uri.parse(videoUrl));
+    if (response.statusCode != 200) {
+      throw Exception('Error al descargar video');
+    }
+
+    final bytes = response.bodyBytes;
+
+    final temp = await getTemporaryDirectory();
+    final directoryPath = '${temp.path}/highlights';
+    await Directory(directoryPath).create(recursive: true);
+
+    final filePath = '$directoryPath/replay_${widget.item['id']}.mp4';
+    final file = File(filePath);
+
+    await file.writeAsBytes(bytes, flush: true);
+    return filePath;
+  }
+
+  Future<void> _saveToGallery() async {
+    setState(() => _isSaving = true);
+    try {
+      // Pedir permisos si es necesario y guardar
+      final filePath = await _downloadVideo();
+      if (filePath != null && await File(filePath).exists()) {
+        await Gal.putVideo(filePath, album: 'Padel Snap');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('¡Video guardado en la galería!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('El archivo no se pudo crear');
+      }
+    } catch (e) {
+      debugPrint('Error al guardar en galería: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo guardar el video: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
   Future<void> _shareVideo() async {
     final videoUrl = widget.item['video_url_vertical'] as String?;
     if (videoUrl == null) return;
 
     setState(() => _isSharing = true);
     try {
-      // 1. Descargar el video
-      final response = await http.get(Uri.parse(videoUrl));
-      if (response.statusCode != 200)
-        throw Exception('Error al descargar video');
+      final filePath = await _downloadVideo();
 
-      final bytes = response.bodyBytes;
-
-      // 2. Guardar temporalmente con nombre único y asegurar que existe
-      final temp = await getTemporaryDirectory();
-      final directoryPath = '${temp.path}/highlights';
-      await Directory(directoryPath).create(recursive: true);
-
-      final filePath = '$directoryPath/replay_${widget.item['id']}.mp4';
-      final file = File(filePath);
-
-      await file.writeAsBytes(bytes, flush: true);
-
-      // 3. Verificar que el archivo realmente existe antes de compartir
-      if (await file.exists()) {
+      if (filePath != null && await File(filePath).exists()) {
         await Share.shareXFiles([
           XFile(filePath),
         ], text: '¡Mira mi jugada en Padel Snap! ⚽🔥');
@@ -306,19 +347,45 @@ class _HighlightCardState extends State<HighlightCard> {
                     ),
                   ],
                 ),
-                _isSharing
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : IconButton(
-                        icon: const Icon(
-                          Icons.ios_share,
-                          color: Color(0xFF00FF88),
-                        ),
-                        onPressed: _shareVideo,
-                      ),
+                Row(
+                  children: [
+                    _isSaving
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00FF88)),
+                            ),
+                          )
+                        : IconButton(
+                            icon: const Icon(
+                              Icons.download_rounded,
+                              color: Color(0xFF00FF88),
+                            ),
+                            onPressed: _saveToGallery,
+                            tooltip: 'Guardar en galería',
+                          ),
+                    const SizedBox(width: 8),
+                    _isSharing
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00FF88)),
+                            ),
+                          )
+                        : IconButton(
+                            icon: const Icon(
+                              Icons.ios_share,
+                              color: Color(0xFF00FF88),
+                            ),
+                            onPressed: _shareVideo,
+                            tooltip: 'Compartir',
+                          ),
+                  ],
+                ),
               ],
             ),
           ),

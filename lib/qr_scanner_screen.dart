@@ -28,6 +28,19 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
           .maybeSingle();
 
       if (response != null) {
+        // Registrar check-in en la base de datos de Supabase
+        final userId = supabase.auth.currentUser?.id;
+        if (userId != null) {
+          try {
+            await supabase.from('check_ins').insert({
+              'user_id': userId,
+              'court_id': response['id'],
+            });
+            debugPrint('Check-in registrado exitosamente en la DB para el usuario $userId');
+          } catch (dbError) {
+            debugPrint('Error al registrar check-in en la DB: $dbError');
+          }
+        }
         AppState().setActiveCourt(response);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

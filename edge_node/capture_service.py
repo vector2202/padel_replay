@@ -2,7 +2,8 @@ import cv2
 import time
 import threading
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import shutil
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +28,8 @@ def load_config():
     default_config = {
         "camera_url": "http://192.168.0.22:8080/video",
         "supabase_url": "https://cwubftnikhgbspndecoc.supabase.co",
-        "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3dWJmdG5pa2hnYnNwbmRlY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzM2NjksImV4cCI6MjA5MjcwOTY2OX0.Iej5JNLUipE2TYd1-3FRd0r1XdgBN2XIXIqgYtggptw"
+        "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3dWJmdG5pa2hnYnNwbmRlY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzM2NjksImV4cCI6MjA5MjcwOTY2OX0.Iej5JNLUipE2TYd1-3FRd0r1XdgBN2XIXIqgYtggptw",
+        "court_id": None
     }
     
     # Si no existe el config.json, lo creamos para que el usuario pueda editarlo
@@ -68,6 +70,8 @@ SUPABASE_URL = _config["supabase_url"]
 SUPABASE_KEY = _config["supabase_key"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+COURT_ID = _config.get("court_id", None)
+
 # Buffer circular y estado Global
 frame_buffer = deque(maxlen=MAX_FRAMES)
 stop_event = threading.Event()
@@ -87,7 +91,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def upload_to_supabase(filepath: str, duration: int, user_id: str = None, court_id: str = None):
+def upload_to_supabase(filepath: str, duration: int, user_ids: list = None, court_id: str = None):
     print(f"[Supabase] Subiendo {filepath}...")
     filename = os.path.basename(filepath)
     try:
@@ -104,15 +108,28 @@ def upload_to_supabase(filepath: str, duration: int, user_id: str = None, court_
         public_url = supabase.storage.from_("highlights").get_public_url(filename)
         
         # Insertar en tabla highlights con user_id y court_id
-        data, count = supabase.table("highlights").insert({
-            "video_url_vertical": public_url,
-            "duration_seconds": duration,
-            "user_id": user_id,
-            "court_id": court_id,
-            "status": "ready"
-        }).execute()
-        
-        print(f"[Supabase] Registro creado para el usuario: {user_id} en cancha: {court_id}")
+        if not user_ids:
+            supabase.table("highlights").insert({
+                "video_url_vertical": public_url,
+                "duration_seconds": duration,
+                "user_id": None,
+                "court_id": court_id,
+                "status": "ready"
+            }).execute()
+            print(f"[Supabase] Registro creado sin usuario asignado en cancha: {court_id}")
+        else:
+            insert_data = [
+                {
+                    "video_url_vertical": public_url,
+                    "duration_seconds": duration,
+                    "user_id": uid,
+                    "court_id": court_id,
+                    "status": "ready"
+                }
+                for uid in user_ids
+            ]
+            supabase.table("highlights").insert(insert_data).execute()
+            print(f"[Supabase] Registro(s) creado(s) para usuario(s): {user_ids} en cancha: {court_id}")
         
         # BORRAR ARCHIVO LOCAL para no ocupar espacio
         if os.path.exists(filepath):
@@ -120,12 +137,12 @@ def upload_to_supabase(filepath: str, duration: int, user_id: str = None, court_
             print(f"[Sistema] Archivo local {filepath} eliminado para liberar espacio.")
             
     except Exception as e:
-        print(f"[Supabase Error] Falló la subida: {e}")
+        print(f"[Supabase Error] Falló la subida/registro: {e}")
         # También intentamos borrar si falló para no acumular basura
         if os.path.exists(filepath):
             os.remove(filepath)
 
-def save_clip_worker(frames_to_save, fps, width, height, user_id=None, court_id=None):
+def save_clip_worker(frames_to_save, fps, width, height, user_ids=None, court_id=None):
     """
     Consumidor: Hace recorte 9:16, guarda y sube.
     """
@@ -160,21 +177,44 @@ def save_clip_worker(frames_to_save, fps, width, height, user_id=None, court_id=
     print(f"[Escritura] ¡Video procesado en {elapsed:.2f}s!\n")
     
     duration = int(len(frames_to_save) / fps)
-    upload_to_supabase(output_filename, duration, user_id, court_id)
+    upload_to_supabase(output_filename, duration, user_ids, court_id)
 
 @app.post("/trigger")
 def trigger_clip(user_id: str = None, court_id: str = None):
     """
-    Endpoint para que la App Flutter dispare la grabación remotamente.
+    Endpoint para disparar la grabación remotamente (desde la App o un botón físico).
     """
-    print(f"\n>>> TRIGGER DETECTADO PARA USUARIO: {user_id} EN CANCHA: {court_id} <<<")
+    effective_court_id = court_id or COURT_ID
+    print(f"\n>>> TRIGGER DETECTADO PARA NODO. CANCHA EFECTIVA: {effective_court_id} <<<")
+    
+    user_ids = []
+    if effective_court_id:
+        try:
+            one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            response = supabase.table("check_ins") \
+                .select("user_id") \
+                .eq("court_id", effective_court_id) \
+                .gte("scanned_at", one_hour_ago) \
+                .execute()
+            
+            if response.data:
+                user_ids = list(set([row["user_id"] for row in response.data]))
+                print(f"[Trigger] Jugadores detectados por check-in en la última hora: {user_ids}")
+        except Exception as e:
+            print(f"[Trigger Error] Error consultando check-ins: {e}")
+
+    # Si se pasó un user_id específico en la petición HTTP (por ejemplo, desde el botón de la App),
+    # nos aseguramos de que esté en la lista a procesar.
+    if user_id and user_id not in user_ids:
+        user_ids.append(user_id)
+
     frames_copy = list(frame_buffer)
     writer_thread = threading.Thread(
         target=save_clip_worker, 
-        args=(frames_copy, cam_fps_global, width_global, height_global, user_id, court_id)
+        args=(frames_copy, cam_fps_global, width_global, height_global, user_ids, effective_court_id)
     )
     writer_thread.start()
-    return {"status": "processing", "user_id": user_id, "court_id": court_id}
+    return {"status": "processing", "user_ids": user_ids, "court_id": effective_court_id}
 
 def capture_loop():
     """
@@ -221,10 +261,25 @@ def capture_loop():
         
         if key == ord(' '): 
             print("\n>>> TRIGGER DETECTADO VÍA TECLADO <<<")
+            user_ids = []
+            if COURT_ID:
+                try:
+                    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+                    response = supabase.table("check_ins") \
+                        .select("user_id") \
+                        .eq("court_id", COURT_ID) \
+                        .gte("scanned_at", one_hour_ago) \
+                        .execute()
+                    if response.data:
+                        user_ids = list(set([row["user_id"] for row in response.data]))
+                        print(f"[Teclado] Jugadores vinculados: {user_ids}")
+                except Exception as e:
+                    print(f"[Teclado Error] Error consultando check-ins: {e}")
+            
             frames_copy = list(frame_buffer)
             writer_thread = threading.Thread(
                 target=save_clip_worker, 
-                args=(frames_copy, cam_fps, width, height)
+                args=(frames_copy, cam_fps, width, height, user_ids, COURT_ID)
             )
             writer_thread.start()
 
@@ -235,6 +290,54 @@ def capture_loop():
 
     cap.release()
     cv2.destroyAllWindows()
+
+def heartbeat_loop():
+    """
+    Bucle que reporta el estado del nodo a Supabase periódicamente (cada 10 minutos).
+    """
+    if not COURT_ID:
+        print("[Heartbeat] ADVERTENCIA: court_id no configurado en config.json. Reporte de estado desactivado.")
+        return
+    
+    print(f"[Heartbeat] Iniciando bucle de monitoreo para la cancha: {COURT_ID}")
+    while not stop_event.is_set():
+        try:
+            # 1. Determinar el estado de la cámara
+            camera_ok = False
+            if 'frame_buffer' in globals() and len(frame_buffer) > 0:
+                # Si el buffer tiene frames, asumimos que está capturando
+                camera_ok = True
+                
+            # 2. Métricas básicas del sistema
+            total, used, free = shutil.disk_usage(".")
+            disk_used_percent = (used / total) * 100
+            
+            status = "online" if camera_ok else "camera_offline"
+            
+            details = {
+                "fps": cam_fps_global,
+                "resolution": f"{width_global}x{height_global}",
+                "disk_used_percent": round(disk_used_percent, 2),
+                "free_space_gb": round(free / (1024**3), 2),
+                "buffer_frames": len(frame_buffer)
+            }
+            
+            supabase.table("courts").update({
+                "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                "node_status": status,
+                "node_details": details
+            }).eq("id", COURT_ID).execute()
+            
+            print(f"[Heartbeat] Reporte enviado. Estado: {status}. Disco libre: {details['free_space_gb']} GB")
+            
+        except Exception as e:
+            print(f"[Heartbeat Error] Error al enviar reporte de estado: {e}")
+            
+        # Esperar 10 minutos (600 segundos) comprobando stop_event cada segundo
+        for _ in range(600):
+            if stop_event.is_set():
+                break
+            time.sleep(1)
 
 def run_api():
     """Ejecuta el servidor FastAPI en el puerto 8000"""
@@ -249,8 +352,12 @@ if __name__ == "__main__":
     api_thread = threading.Thread(target=run_api, daemon=True)
     api_thread.start()
     
+    # 2. Iniciar hilo de Heartbeat
+    heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    heartbeat_thread.start()
+    
     try:
-        # 2. Iniciar captura de video en hilo principal (Requisito de OpenCV en Mac)
+        # 3. Iniciar captura de video en hilo principal (Requisito de OpenCV en Mac)
         capture_loop()
         
     except KeyboardInterrupt:
