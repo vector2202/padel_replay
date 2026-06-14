@@ -268,15 +268,18 @@ class ExploreScreenState extends State<ExploreScreen> {
                                   color: Color(0xFF00FF88),
                                 )
                               : null,
-                          onTap: () {
+                          onTap: () async {
                             setState(() {
                               selectedComplex = complex;
                               selectedCourt =
                                   null; // Reiniciar cancha al cambiar complejo
                             });
                             Navigator.pop(context);
-                            // Abrir automáticamente el de cancha si hay canchas
-                            _showCourtPicker();
+                            // Esperar a que se complete la animación del pop antes de abrir el siguiente sheet
+                            await Future.delayed(const Duration(milliseconds: 250));
+                            if (mounted) {
+                              _showCourtPicker();
+                            }
                           },
                         );
                       },
@@ -553,40 +556,44 @@ class ExploreScreenState extends State<ExploreScreen> {
     required VoidCallback onTap,
     bool isEnabled = true,
   }) {
-    return GestureDetector(
-      onTap: isEnabled ? onTap : null,
-      child: Opacity(
-        opacity: isEnabled ? 1.0 : 0.4,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive
-                ? const Color(0xFF00FF88).withOpacity(0.15)
-                : const Color(0xFF262628),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: isActive ? const Color(0xFF00FF88) : Colors.white10,
-              width: 1,
+    return Opacity(
+      opacity: isEnabled ? 1.0 : 0.4,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isEnabled ? onTap : null,
+          borderRadius: BorderRadius.circular(30),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? const Color(0xFF00FF88).withOpacity(0.15)
+                  : const Color(0xFF262628),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: isActive ? const Color(0xFF00FF88) : Colors.white10,
+                width: 1,
+              ),
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: isActive ? const Color(0xFF00FF88) : Colors.white70,
-                  fontSize: 13,
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isActive ? const Color(0xFF00FF88) : Colors.white70,
+                    fontSize: 13,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 16,
-                color: isActive ? const Color(0xFF00FF88) : Colors.white38,
-              ),
-            ],
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: isActive ? const Color(0xFF00FF88) : Colors.white38,
+                ),
+              ],
+            ),
           ),
         ),
       ),
