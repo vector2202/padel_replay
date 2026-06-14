@@ -8,15 +8,171 @@ class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
 
   @override
-  State<ExploreScreen> createState() => _ExploreScreenState();
+  State<ExploreScreen> createState() => ExploreScreenState();
 }
 
-class _ExploreScreenState extends State<ExploreScreen> {
+class ExploreScreenState extends State<ExploreScreen> {
   final supabase = Supabase.instance.client;
 
   Map<String, dynamic>? selectedComplex;
   Map<String, dynamic>? selectedCourt;
   DateTime selectedDate = DateTime.now();
+
+  void resetFilters() {
+    setState(() {
+      selectedComplex = null;
+      selectedCourt = null;
+      selectedDate = DateTime.now();
+    });
+  }
+
+  Widget _buildClubCard() {
+    final complex = selectedComplex;
+    if (complex == null) return const SizedBox.shrink();
+
+    final id = complex['id'].toString();
+    final imageUrl = complex['image_url'] ?? 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=150&q=80';
+    final name = complex['name'] ?? '';
+    final location = complex['location'] ?? 'Sin dirección';
+
+    return ListenableBuilder(
+      listenable: AppState(),
+      builder: (context, child) {
+        final isFav = AppState().isFavoriteComplex(id);
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E20),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isFav ? const Color(0xFF00FF88).withOpacity(0.3) : Colors.white10,
+              width: 1.5,
+            ),
+            image: DecorationImage(
+              image: NetworkImage(imageUrl),
+              fit: BoxFit.cover,
+              colorFilter: ColorFilter.mode(
+                Colors.black.withOpacity(0.65),
+                BlendMode.darken,
+              ),
+            ),
+            boxShadow: [
+              if (isFav)
+                BoxShadow(
+                  color: const Color(0xFF00FF88).withOpacity(0.1),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(14.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00FF88).withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.sports_tennis,
+                        color: Color(0xFF00FF88),
+                        size: 20,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      name.toUpperCase(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on,
+                          color: Color(0xFF00FF88),
+                          size: 12,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.6),
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isFav ? const Color(0xFF00FF88).withOpacity(0.2) : Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isFav ? 'FAVORITO' : 'AÑADIR FAVORITO',
+                        style: TextStyle(
+                          color: isFav ? const Color(0xFF00FF88) : Colors.white60,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      AppState().toggleFavoriteComplex(id);
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isFav ? Icons.star : Icons.star_border,
+                        color: isFav ? const Color(0xFF00FF88) : Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 
   // Mostrar Bottom Sheet para seleccionar Complejo
   void _showComplexPicker() {
@@ -478,25 +634,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
         }
 
         final items = snapshot.data!;
-        if (items.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.video_camera_back_outlined,
-                  size: 48,
-                  color: Colors.grey[700],
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'No hay jugadas grabadas este día.',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          );
-        }
 
         return GridView.builder(
           padding: const EdgeInsets.all(12),
@@ -506,11 +643,50 @@ class _ExploreScreenState extends State<ExploreScreen> {
             mainAxisSpacing: 12,
             childAspectRatio: 9 / 16,
           ),
-          itemCount: items.length,
-          itemBuilder: (context, index) => HighlightCard(
-            item: items[index],
-            autoPreload: index < 4,
-          ),
+          itemCount: items.isEmpty ? 2 : items.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return _buildClubCard();
+            }
+            if (items.isEmpty && index == 1) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.02),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.05),
+                    width: 1,
+                  ),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.video_camera_back_outlined,
+                      size: 32,
+                      color: Colors.grey[700],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Sin jugadas\neste día',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+            final itemIndex = index - 1;
+            return HighlightCard(
+              item: items[itemIndex],
+              autoPreload: itemIndex < 3,
+            );
+          },
         );
       },
     );

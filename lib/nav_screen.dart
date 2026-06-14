@@ -15,9 +15,18 @@ class NavScreen extends StatefulWidget {
 }
 
 class _NavScreenState extends State<NavScreen> {
+  final GlobalKey<ExploreScreenState> _exploreKey = GlobalKey<ExploreScreenState>();
+  late final List<Widget> _screens;
+
   @override
   void initState() {
     super.initState();
+    _screens = [
+      ExploreScreen(key: _exploreKey),
+      const QrScannerScreen(),
+      const HighlightsScreen(),
+      const SettingsScreen(),
+    ];
     AppState().addListener(_onStateChanged);
   }
 
@@ -42,13 +51,6 @@ class _NavScreenState extends State<NavScreen> {
 
   // IP corregida según tu terminal
   String edgeNodeIp = "192.168.0.15";
-
-  final List<Widget> _screens = [
-    const ExploreScreen(),
-    const QrScannerScreen(),
-    const HighlightsScreen(),
-    const SettingsScreen(),
-  ];
 
   Future<void> _triggerHighlight() async {
     debugPrint('>>> BOTÓN REPLAY PRESIONADO <<<');
@@ -181,19 +183,29 @@ class _NavScreenState extends State<NavScreen> {
   Widget _buildNavItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
     return InkWell(
-      onTap: () => setState(() => _selectedIndex = index),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: isSelected ? const Color(0xFF00FF88) : Colors.grey),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              color: isSelected ? const Color(0xFF00FF88) : Colors.grey,
+      onTap: () {
+        if (isSelected && index == 0) {
+          _exploreKey.currentState?.resetFilters();
+        } else {
+          setState(() => _selectedIndex = index);
+        }
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: isSelected ? const Color(0xFF00FF88) : Colors.grey),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: isSelected ? const Color(0xFF00FF88) : Colors.grey,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
