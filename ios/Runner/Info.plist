@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera to scan codes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Padel Snap needs access to your photo library to save and view your recorded plays.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Padel Snap saves your recorded plays directly to your photo library.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs access to the local network to connect to the Edge Node.</string>
 	<key>UIApplicationSceneManifest</key>
