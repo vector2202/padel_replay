@@ -145,9 +145,15 @@ class _HighlightCardState extends State<HighlightCard> {
   bool _isSharing = false;
   bool _isSaving = false;
 
+  bool _isFavorited = false;
+  bool _checkingFavorite = true;
+  String? _favoriteRecordId;
+  final _supabase = Supabase.instance.client;
+
   @override
   void initState() {
     super.initState();
+    _checkIfFavorited();
     if (widget.autoPreload) {
       _initializeVideo();
     }
@@ -172,6 +178,105 @@ class _HighlightCardState extends State<HighlightCard> {
           .catchError((error) {
             debugPrint('Error al inicializar previsualización: $error');
           });
+    }
+  }
+
+  Future<void> _checkIfFavorited() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) {
+      if (mounted) setState(() => _checkingFavorite = false);
+      return;
+    }
+
+    // Si la jugada ya pertenece al usuario logueado en la base de datos
+    if (widget.item['user_id'] == userId) {
+      if (mounted) {
+        setState(() {
+          _isFavorited = true;
+          _checkingFavorite = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final response = await _supabase
+          .from('highlights')
+          .select('id')
+          .eq('video_url_vertical', widget.item['video_url_vertical'] ?? '')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (mounted) {
+        setState(() {
+          _isFavorited = response != null;
+          _favoriteRecordId = response?['id']?.toString();
+          _checkingFavorite = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al verificar favorito: $e');
+      if (mounted) setState(() => _checkingFavorite = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    setState(() => _checkingFavorite = true);
+
+    try {
+      if (_isFavorited) {
+        // Quitar de favoritos (Borrar registro duplicado)
+        final recordIdToDelete = _favoriteRecordId ?? 
+            (widget.item['user_id'] == userId ? widget.item['id']?.toString() : null);
+
+        if (recordIdToDelete != null) {
+          await _supabase.from('highlights').delete().eq('id', recordIdToDelete);
+        } else {
+          await _supabase
+              .from('highlights')
+              .delete()
+              .eq('video_url_vertical', widget.item['video_url_vertical'] ?? '')
+              .eq('user_id', userId);
+        }
+
+        if (mounted) {
+          setState(() {
+            _isFavorited = false;
+            _favoriteRecordId = null;
+          });
+        }
+      } else {
+        // Añadir a favoritos (Crear copia de la fila)
+        final response = await _supabase.from('highlights').insert({
+          'video_url_vertical': widget.item['video_url_vertical'],
+          'duration_seconds': widget.item['duration_seconds'],
+          'user_id': userId,
+          'court_id': widget.item['court_id'],
+          'status': widget.item['status'],
+        }).select('id').single();
+
+        if (mounted) {
+          setState(() {
+            _isFavorited = true;
+            _favoriteRecordId = response['id']?.toString();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error al cambiar estado de favorito: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar jugada: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _checkingFavorite = false);
     }
   }
 
@@ -460,6 +565,45 @@ class _HighlightCardState extends State<HighlightCard> {
                         ),
                 ],
               ),
+            ),
+
+            // Botón de estrella flotante (favoritos)
+            Positioned(
+              top: 10,
+              right: 10,
+              child: _checkingFavorite
+                  ? Container(
+                      padding: const EdgeInsets.all(6),
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00FF88)),
+                      ),
+                    )
+                  : GestureDetector(
+                      onTap: _toggleFavorite,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.5),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.1),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          _isFavorited ? Icons.star_rounded : Icons.star_border_rounded,
+                          color: _isFavorited ? const Color(0xFF00FF88) : Colors.white70,
+                          size: 20,
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
