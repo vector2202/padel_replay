@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 import time
 import threading
 from collections import deque
@@ -56,6 +57,90 @@ def load_config():
         return default_config
 
 _config = load_config()
+
+# --- FUNCIONES DE LOGO / OVERLAY ---
+def _get_base_path():
+    """Obtiene la ruta base según si es ejecutable o script."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+
+def load_logo(filename, target_width=None):
+    """
+    Carga una imagen PNG con canal alfa (transparencia).
+    Si target_width se especifica, redimensiona manteniendo proporción.
+    Retorna (bgr, alpha) o (None, None) si falla.
+    """
+    filepath = os.path.join(_get_base_path(), "images", filename)
+    if not os.path.exists(filepath):
+        print(f"[Logo] ADVERTENCIA: No se encontró {filepath}")
+        return None, None
+    
+    img = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        print(f"[Logo] ADVERTENCIA: No se pudo cargar {filepath}")
+        return None, None
+    
+    # Si la imagen no tiene canal alfa, crear uno totalmente opaco
+    if img.shape[2] == 3:
+        alpha = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8) * 255
+        img = np.dstack([img, alpha])
+    
+    # Redimensionar si se especifica target_width
+    if target_width and target_width > 0:
+        h, w = img.shape[:2]
+        scale = target_width / w
+        new_h = int(h * scale)
+        img = cv2.resize(img, (target_width, new_h), interpolation=cv2.INTER_AREA)
+    
+    bgr = img[:, :, :3]
+    alpha = img[:, :, 3].astype(np.float32) / 255.0
+    return bgr, alpha
+
+def overlay_logo(frame, logo_bgr, logo_alpha, x, y):
+    """
+    Superpone un logo con transparencia alfa sobre un frame.
+    x, y = esquina superior izquierda del logo en el frame.
+    """
+    if logo_bgr is None or logo_alpha is None:
+        return frame
+    
+    lh, lw = logo_bgr.shape[:2]
+    fh, fw = frame.shape[:2]
+    
+    # Ajustar si el logo se sale del frame
+    if x < 0: x = 0
+    if y < 0: y = 0
+    if x + lw > fw: lw = fw - x
+    if y + lh > fh: lh = fh - y
+    if lw <= 0 or lh <= 0:
+        return frame
+    
+    # Región del frame donde va el logo
+    roi = frame[y:y+lh, x:x+lw]
+    logo_crop = logo_bgr[:lh, :lw]
+    alpha_crop = logo_alpha[:lh, :lw]
+    
+    # Blending con alfa
+    alpha_3ch = np.dstack([alpha_crop, alpha_crop, alpha_crop])
+    blended = (alpha_3ch * logo_crop.astype(np.float32) + 
+               (1.0 - alpha_3ch) * roi.astype(np.float32)).astype(np.uint8)
+    frame[y:y+lh, x:x+lw] = blended
+    return frame
+
+# Precargar logos (se redimensionarán al tamaño final en save_clip_worker)
+print("[Logo] Cargando logos...")
+_logo_app_raw = cv2.imread(os.path.join(_get_base_path(), "images", "logo_app.png"), cv2.IMREAD_UNCHANGED)
+_logo_club_raw = cv2.imread(os.path.join(_get_base_path(), "images", "logo_club.png"), cv2.IMREAD_UNCHANGED)
+if _logo_app_raw is not None:
+    print(f"[Logo] logo_app.png cargado ({_logo_app_raw.shape[1]}x{_logo_app_raw.shape[0]})")
+else:
+    print("[Logo] ADVERTENCIA: logo_app.png no encontrado o no se pudo cargar.")
+if _logo_club_raw is not None:
+    print(f"[Logo] logo_club.png cargado ({_logo_club_raw.shape[1]}x{_logo_club_raw.shape[0]})")
+else:
+    print("[Logo] ADVERTENCIA: logo_club.png no encontrado o no se pudo cargar.")
 
 # ==========================================
 # CONFIGURACIÓN DEL NODO EDGE
@@ -167,9 +252,28 @@ def save_clip_worker(frames_to_save, fps, width, height, user_ids=None, court_id
     fourcc = cv2.VideoWriter_fourcc(*'avc1')
     out = cv2.VideoWriter(output_filename, fourcc, fps, (target_w, target_h))
 
+    # --- Preparar logos escalados para este tamaño de video ---
+    logo_size = int(target_w * 0.18)  # Aumentado a 18% del ancho del video para mayor visibilidad
+    margin = int(target_w * 0.04)     # 4% de margen desde los bordes para balancear el nuevo tamaño
+    
+    app_bgr, app_alpha = load_logo("logo_app.png", target_width=logo_size)
+    club_bgr, club_alpha = load_logo("logo_club.png", target_width=logo_size)
+    
     for frame in frames_to_save:
         cropped = frame[0:height, start_x:end_x]
         resized = cv2.resize(cropped, (target_w, target_h))
+        
+        # Logo App → esquina inferior izquierda
+        if app_bgr is not None:
+            app_y = target_h - app_bgr.shape[0] - margin
+            resized = overlay_logo(resized, app_bgr, app_alpha, margin, app_y)
+        
+        # Logo Club → esquina inferior derecha
+        if club_bgr is not None:
+            club_x = target_w - club_bgr.shape[1] - margin
+            club_y = target_h - club_bgr.shape[0] - margin
+            resized = overlay_logo(resized, club_bgr, club_alpha, club_x, club_y)
+        
         out.write(resized)
 
     out.release()
