@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'highlights_screen.dart';
+import 'app_state.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -58,7 +59,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       );
                     }
 
-                    final complexes = snapshot.data!;
+                    final complexes = List<Map<String, dynamic>>.from(snapshot.data!);
+                    // Ordenar por favoritos primero
+                    complexes.sort((a, b) {
+                      final aFav = AppState().isFavoriteComplex(a['id'].toString());
+                      final bFav = AppState().isFavoriteComplex(b['id'].toString());
+                      if (aFav && !bFav) return -1;
+                      if (!aFav && bFav) return 1;
+                      // Si ambos son favoritos o ninguno, mantener orden alfabético por nombre
+                      return (a['name'] ?? '').toString().compareTo((b['name'] ?? '').toString());
+                    });
+
                     return ListView.builder(
                       shrinkWrap: true,
                       itemCount: complexes.length,
@@ -66,21 +77,34 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         final complex = complexes[index];
                         final isSelected =
                             selectedComplex?['id'] == complex['id'];
+                        final isFav = AppState().isFavoriteComplex(complex['id'].toString());
 
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 8,
                           ),
-                          title: Text(
-                            complex['name'],
-                            style: TextStyle(
-                              color: isSelected
-                                  ? const Color(0xFF00FF88)
-                                  : Colors.white,
-                              fontWeight: isSelected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
+                          title: Row(
+                            children: [
+                              Text(
+                                complex['name'],
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? const Color(0xFF00FF88)
+                                      : Colors.white,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                              if (isFav) ...[
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.star,
+                                  color: Color(0xFF00FF88),
+                                  size: 16,
+                                ),
+                              ],
+                            ],
                           ),
                           trailing: isSelected
                               ? const Icon(

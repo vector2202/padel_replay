@@ -1,5 +1,5 @@
 {
-    "camera_url": "http://192.168.0.17:8080/video",
+    "camera_url": "http://192.168.0.10:8080/video",
     "supabase_url": "https://cwubftnikhgbspndecoc.supabase.co",
     "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3dWJmdG5pa2hnYnNwbmRlY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzM2NjksImV4cCI6MjA5MjcwOTY2OX0.Iej5JNLUipE2TYd1-3FRd0r1XdgBN2XIXIqgYtggptw"
 }

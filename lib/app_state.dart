@@ -10,18 +10,35 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic>? _activeCourt;
   DateTime? _sessionStartTime;
   String _edgeNodeIp = "192.168.0.15"; // IP por defecto
+  List<String> _favoriteComplexIds = [];
 
   String get edgeNodeIp => _edgeNodeIp;
+  List<String> get favoriteComplexIds => _favoriteComplexIds;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _edgeNodeIp = _prefs?.getString('edge_node_ip') ?? "192.168.0.15";
+    _favoriteComplexIds = _prefs?.getStringList('favorite_complex_ids') ?? [];
     notifyListeners();
   }
   
   void setEdgeNodeIp(String ip) {
     _edgeNodeIp = ip;
     _prefs?.setString('edge_node_ip', ip);
+    notifyListeners();
+  }
+
+  bool isFavoriteComplex(String id) {
+    return _favoriteComplexIds.contains(id);
+  }
+
+  void toggleFavoriteComplex(String id) {
+    if (_favoriteComplexIds.contains(id)) {
+      _favoriteComplexIds.remove(id);
+    } else {
+      _favoriteComplexIds.add(id);
+    }
+    _prefs?.setStringList('favorite_complex_ids', _favoriteComplexIds);
     notifyListeners();
   }
   Map<String, dynamic>? get activeCourt {
