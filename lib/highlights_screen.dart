@@ -41,12 +41,19 @@ class _HighlightsScreenState extends State<HighlightsScreen> {
     final userEmail = supabase.auth.currentUser?.email ?? 'Usuario';
 
     return Scaffold(
+      backgroundColor: const Color(0xFF121214),
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Column(
           children: [
             const Text(
-              'PADEL SNAP',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              'MIS PLAYS',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
             ),
             Text(
               userEmail,
@@ -56,17 +63,26 @@ class _HighlightsScreenState extends State<HighlightsScreen> {
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.logout, size: 20),
+          icon: const Icon(Icons.logout, size: 20, color: Colors.white70),
           onPressed: _logout,
         ),
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: _highlightsStream,
         builder: (context, snapshot) {
-          if (snapshot.hasError)
-            return Center(child: Text('Error: ${snapshot.error}'));
-          if (!snapshot.hasData)
-            return const Center(child: CircularProgressIndicator());
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Error: ${snapshot.error}',
+                style: const TextStyle(color: Colors.red),
+              ),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00FF88)),
+            );
+          }
 
           final highlights = snapshot.data!;
           if (highlights.isEmpty) {
@@ -89,12 +105,19 @@ class _HighlightsScreenState extends State<HighlightsScreen> {
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
+          return GridView.builder(
+            padding: const EdgeInsets.all(12),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 9 / 16,
+            ),
             itemCount: highlights.length,
             itemBuilder: (context, index) {
               final item = highlights[index];
-              return HighlightCard(item: item, autoPreload: index < 2);
+              // Pre-cargar el primer frame de manera nativa solo para los primeros 4 videos (visibles al entrar)
+              return HighlightCard(item: item, autoPreload: index < 4);
             },
           );
         },
@@ -119,7 +142,6 @@ class HighlightCard extends StatefulWidget {
 class _HighlightCardState extends State<HighlightCard> {
   VideoPlayerController? _controller;
   bool _initialized = false;
-  bool _showVideo = false;
   bool _isSharing = false;
   bool _isSaving = false;
 
@@ -127,8 +149,36 @@ class _HighlightCardState extends State<HighlightCard> {
   void initState() {
     super.initState();
     if (widget.autoPreload) {
-      _initializeVideo(autoPlay: false);
+      _initializeVideo();
     }
+  }
+
+  // Inicializar controlador para el primer frame silenciosamente
+  void _initializeVideo() {
+    if (_controller != null) return;
+
+    final videoUrl = widget.item['video_url_vertical'] as String?;
+    if (videoUrl != null) {
+      _controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+      _controller!
+          .initialize()
+          .then((_) {
+            if (mounted) {
+              setState(() {
+                _initialized = true;
+              });
+            }
+          })
+          .catchError((error) {
+            debugPrint('Error al inicializar previsualización: $error');
+          });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
   }
 
   Future<String?> _downloadVideo() async {
@@ -156,7 +206,6 @@ class _HighlightCardState extends State<HighlightCard> {
   Future<void> _saveToGallery() async {
     setState(() => _isSaving = true);
     try {
-      // Pedir permisos si es necesario y guardar
       final filePath = await _downloadVideo();
       if (filePath != null && await File(filePath).exists()) {
         await Gal.putVideo(filePath, album: 'Padel Snap');
@@ -216,180 +265,499 @@ class _HighlightCardState extends State<HighlightCard> {
     }
   }
 
-  void _initializeVideo({bool autoPlay = true}) {
-    // Si ya está inicializado y solo queremos mostrarlo
-    if (_initialized && autoPlay) {
-      setState(() => _showVideo = true);
-      _controller?.play();
-      return;
-    }
-
-    // Si ya se está cargando, no hacer nada más
-    if (_controller != null && !_initialized) return;
-
+  void _openFullScreen() {
     final videoUrl = widget.item['video_url_vertical'] as String?;
-    debugPrint(' Intentando reproducir: $videoUrl');
+    if (videoUrl == null) return;
 
-    if (videoUrl != null) {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+    // Si no está inicializado, lo inicializamos para cuando vuelva
+    _initializeVideo();
 
-      _controller!
-          .initialize()
-          .then((_) {
-            debugPrint(' Video inicializado correctamente');
-            if (mounted) {
-              setState(() {
-                _initialized = true;
-                if (autoPlay) _showVideo = true;
-              });
-              if (autoPlay) _controller!.play();
-            }
-          })
-          .catchError((error) {
-            debugPrint(' Error al inicializar VideoPlayer: $error');
-          });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenVideoPlayer(
+          videoUrl: videoUrl,
+          title: 'Jugada #${widget.item['id'].toString().substring(0, 4)}',
+          dateString:
+              'Grabado: ${DateTime.parse(widget.item['created_at']).toLocal().toString().split('.')[0]}',
+          onShare: _shareVideo,
+          onSave: _saveToGallery,
+          isSharing: _isSharing,
+          isSaving: _isSaving,
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Si no está inicializado pero el widget entra en pantalla, lo inicializamos de forma perezosa
+    if (!_initialized && _controller == null) {
+      _initializeVideo();
+    }
+
+    final dateString = DateTime.parse(
+      widget.item['created_at'],
+    ).toLocal().toString().split(' ')[0];
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1C),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Área de Video / Placeholder
-          AspectRatio(
-            aspectRatio: 9 / 16,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(20),
-              ),
-              child: _showVideo && _initialized
-                  ? InkWell(
-                      onTap: () {
-                        setState(() {
-                          _controller!.value.isPlaying
-                              ? _controller!.pause()
-                              : _controller!.play();
-                        });
-                      },
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          VideoPlayer(_controller!),
-                          if (!_controller!.value.isPlaying)
-                            const Icon(
-                              Icons.play_circle_fill,
-                              size: 60,
-                              color: Colors.white70,
-                            ),
-                        ],
-                      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Preview / Video renderizado (primer frame estático)
+            Positioned.fill(
+              child: _initialized && _controller != null
+                  ? AspectRatio(
+                      aspectRatio: _controller!.value.aspectRatio,
+                      child: VideoPlayer(_controller!),
                     )
                   : Container(
-                      color: Colors.black26,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF1E1E22), Color(0xFF101012)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
                       child: Center(
-                        child: _showVideo
-                            ? const CircularProgressIndicator()
-                            : Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.play_circle_outline,
-                                    size: 80,
-                                    color: Color(0xFF00FF88),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  ElevatedButton(
-                                    onPressed: _initializeVideo,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF00FF88),
-                                      foregroundColor: Colors.black,
-                                    ),
-                                    child: const Text('VER HIGHLIGHT'),
-                                  ),
-                                ],
+                        child: Icon(
+                          Icons.sports_tennis_rounded,
+                          color: const Color(0xFF00FF88).withOpacity(0.15),
+                          size: 40,
+                        ),
+                      ),
+                    ),
+            ),
+
+            // Sombra oscura inferior para leer textos y controles
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.black54,
+                      Colors.transparent,
+                      Colors.black87,
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.0, 0.4, 1.0],
+                  ),
+                ),
+              ),
+            ),
+
+            // Botón de Play gigante en medio (abre pantalla completa)
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _openFullScreen,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Color(0xFF00FF88),
+                        size: 32,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Textos descriptivos (Inferior izquierdo)
+            Positioned(
+              left: 10,
+              bottom: 44,
+              right: 10,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Jugada #${widget.item['id'].toString().substring(0, 4)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    dateString,
+                    style: TextStyle(color: Colors.grey[400], fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+
+            // Botones de acción inferiores (Descargar, Compartir)
+            Positioned(
+              left: 6,
+              bottom: 4,
+              right: 6,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _isSaving
+                      ? const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: Padding(
+                            padding: EdgeInsets.all(6),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF00FF88),
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          iconSize: 18,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(
+                            Icons.download_rounded,
+                            color: Color(0xFF00FF88),
+                          ),
+                          onPressed: _saveToGallery,
+                          tooltip: 'Guardar',
+                        ),
+                  _isSharing
+                      ? const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: Padding(
+                            padding: EdgeInsets.all(6),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF00FF88),
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          iconSize: 18,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(
+                            Icons.ios_share,
+                            color: Color(0xFF00FF88),
+                          ),
+                          onPressed: _shareVideo,
+                          tooltip: 'Compartir',
+                        ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────
+//  Full-Screen Video Player
+// ──────────────────────────────────────────────
+class FullScreenVideoPlayer extends StatefulWidget {
+  final String videoUrl;
+  final String title;
+  final String dateString;
+  final VoidCallback onShare;
+  final VoidCallback onSave;
+  final bool isSharing;
+  final bool isSaving;
+
+  const FullScreenVideoPlayer({
+    super.key,
+    required this.videoUrl,
+    required this.title,
+    required this.dateString,
+    required this.onShare,
+    required this.onSave,
+    this.isSharing = false,
+    this.isSaving = false,
+  });
+
+  @override
+  State<FullScreenVideoPlayer> createState() => _FullScreenVideoPlayerState();
+}
+
+class _FullScreenVideoPlayerState extends State<FullScreenVideoPlayer> {
+  late VideoPlayerController _controller;
+  bool _initialized = false;
+  bool _controlsVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+    _controller.initialize().then((_) {
+      if (mounted) {
+        setState(() => _initialized = true);
+        _controller.play();
+      }
+    });
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggleControls() => setState(() => _controlsVisible = !_controlsVisible);
+
+  void _togglePlayPause() {
+    setState(() {
+      _controller.value.isPlaying ? _controller.pause() : _controller.play();
+    });
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        onTap: _toggleControls,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // ── Video ──
+            Center(
+              child: _initialized
+                  ? AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio,
+                      child: VideoPlayer(_controller),
+                    )
+                  : const CircularProgressIndicator(
+                      color: Color(0xFF00FF88),
+                    ),
+            ),
+
+            // ── Overlay Controls ──
+            if (_controlsVisible) ...[
+              // Top bar
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.of(context).padding.top + 8,
+                    bottom: 16,
+                    left: 8,
+                    right: 16,
+                  ),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.black87, Colors.transparent],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
                               ),
+                            ),
+                            Text(
+                              widget.dateString,
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Center Play/Pause button
+              Center(
+                child: GestureDetector(
+                  onTap: _togglePlayPause,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      shape: BoxShape.circle,
                     ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Jugada #${widget.item['id'].toString().substring(0, 4)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                    child: Icon(
+                      _controller.value.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: const Color(0xFF00FF88),
+                      size: 48,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Bottom bar — progress + actions
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).padding.bottom + 16,
+                    top: 24,
+                    left: 16,
+                    right: 16,
+                  ),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.transparent, Colors.black87],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Progress slider
+                      if (_initialized)
+                        Row(
+                          children: [
+                            Text(
+                              _formatDuration(_controller.value.position),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                            Expanded(
+                              child: Slider(
+                                activeColor: const Color(0xFF00FF88),
+                                inactiveColor: Colors.white24,
+                                value: _controller.value.position.inMilliseconds
+                                    .toDouble()
+                                    .clamp(
+                                      0,
+                                      _controller.value.duration.inMilliseconds
+                                          .toDouble(),
+                                    ),
+                                min: 0,
+                                max: _controller.value.duration.inMilliseconds
+                                    .toDouble()
+                                    .clamp(1, double.infinity),
+                                onChanged: (v) => _controller.seekTo(
+                                  Duration(milliseconds: v.toInt()),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _formatDuration(_controller.value.duration),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                      // Action buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Save to gallery
+                          widget.isSaving
+                              ? const SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Padding(
+                                    padding: EdgeInsets.all(10),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF00FF88),
+                                    ),
+                                  ),
+                                )
+                              : IconButton(
+                                  icon: const Icon(
+                                    Icons.download_rounded,
+                                    color: Color(0xFF00FF88),
+                                    size: 26,
+                                  ),
+                                  tooltip: 'Guardar en galería',
+                                  onPressed: widget.onSave,
+                                ),
+
+                          const SizedBox(width: 24),
+
+                          // Share
+                          widget.isSharing
+                              ? const SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Padding(
+                                    padding: EdgeInsets.all(10),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF00FF88),
+                                    ),
+                                  ),
+                                )
+                              : IconButton(
+                                  icon: const Icon(
+                                    Icons.ios_share,
+                                    color: Color(0xFF00FF88),
+                                    size: 26,
+                                  ),
+                                  tooltip: 'Compartir',
+                                  onPressed: widget.onShare,
+                                ),
+                        ],
                       ),
-                    ),
-                    Text(
-                      'Grabado: ${DateTime.parse(widget.item['created_at']).toLocal().toString().split('.')[0]}',
-                      style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                Row(
-                  children: [
-                    _isSaving
-                        ? const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00FF88)),
-                            ),
-                          )
-                        : IconButton(
-                            icon: const Icon(
-                              Icons.download_rounded,
-                              color: Color(0xFF00FF88),
-                            ),
-                            onPressed: _saveToGallery,
-                            tooltip: 'Guardar en galería',
-                          ),
-                    const SizedBox(width: 8),
-                    _isSharing
-                        ? const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00FF88)),
-                            ),
-                          )
-                        : IconButton(
-                            icon: const Icon(
-                              Icons.ios_share,
-                              color: Color(0xFF00FF88),
-                            ),
-                            onPressed: _shareVideo,
-                            tooltip: 'Compartir',
-                          ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
