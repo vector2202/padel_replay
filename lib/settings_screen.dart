@@ -10,8 +10,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late TextEditingController _ipController;
-
   @override
   void initState() {
     super.initState();

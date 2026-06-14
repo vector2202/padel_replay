@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'highlights_screen.dart'; // Reutilizaremos el card de highlight
+import 'package:intl/intl.dart';
+import 'highlights_screen.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -11,146 +12,423 @@ class ExploreScreen extends StatefulWidget {
 
 class _ExploreScreenState extends State<ExploreScreen> {
   final supabase = Supabase.instance.client;
-  
+
   Map<String, dynamic>? selectedComplex;
   Map<String, dynamic>? selectedCourt;
   DateTime selectedDate = DateTime.now();
 
+  // Mostrar Bottom Sheet para seleccionar Complejo
+  void _showComplexPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E20),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Selecciona el Complejo',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: supabase.from('complexes').select(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF00FF88),
+                        ),
+                      );
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Center(
+                        child: Text('No hay complejos disponibles'),
+                      );
+                    }
+
+                    final complexes = snapshot.data!;
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: complexes.length,
+                      itemBuilder: (context, index) {
+                        final complex = complexes[index];
+                        final isSelected =
+                            selectedComplex?['id'] == complex['id'];
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                          title: Text(
+                            complex['name'],
+                            style: TextStyle(
+                              color: isSelected
+                                  ? const Color(0xFF00FF88)
+                                  : Colors.white,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF00FF88),
+                                )
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              selectedComplex = complex;
+                              selectedCourt =
+                                  null; // Reiniciar cancha al cambiar complejo
+                            });
+                            Navigator.pop(context);
+                            // Abrir automáticamente el de cancha si hay canchas
+                            _showCourtPicker();
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Mostrar Bottom Sheet para seleccionar Cancha
+  void _showCourtPicker() {
+    if (selectedComplex == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Primero selecciona un complejo')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E20),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Canchas en ${selectedComplex!['name']}',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Flexible(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: supabase
+                      .from('courts')
+                      .select()
+                      .eq('complex_id', selectedComplex!['id']),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF00FF88),
+                        ),
+                      );
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No hay canchas disponibles para este complejo',
+                        ),
+                      );
+                    }
+
+                    final courts = snapshot.data!;
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: courts.length,
+                      itemBuilder: (context, index) {
+                        final court = courts[index];
+                        final isSelected = selectedCourt?['id'] == court['id'];
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                          ),
+                          title: Text(
+                            court['name'],
+                            style: TextStyle(
+                              color: isSelected
+                                  ? const Color(0xFF00FF88)
+                                  : Colors.white,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF00FF88),
+                                )
+                              : null,
+                          onTap: () {
+                            setState(() {
+                              selectedCourt = court;
+                            });
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Selector de Fecha Nativo
+  Future<void> _selectDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF00FF88),
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E20),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != selectedDate) {
+      setState(() {
+        selectedDate = picked;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final formattedDate = DateFormat('dd MMM').format(selectedDate);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('EXPLORAR')),
+      backgroundColor: const Color(0xFF121214),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text(
+          'EXPLORAR JUGADAS',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: Column(
         children: [
-          // 1. Selector de Complejo
-          _buildSectionTitle('1. Selecciona el Complejo'),
-          _buildComplexSelector(),
-          
-          if (selectedComplex != null) ...[
-            // 2. Selector de Cancha
-            _buildSectionTitle('2. Selecciona la Cancha'),
-            _buildCourtSelector(),
-          ],
+          // Banner Horizontal de Filtros
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1A1C),
+              border: Border(
+                bottom: BorderSide(color: Colors.white.withOpacity(0.05)),
+              ),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Filtro Complejo
+                  _buildFilterChip(
+                    label: selectedComplex != null
+                        ? selectedComplex!['name']
+                        : 'Complejo',
+                    isActive: selectedComplex != null,
+                    onTap: _showComplexPicker,
+                  ),
+                  const SizedBox(width: 8),
 
-          if (selectedCourt != null) ...[
-            // 3. Selector de Fecha
-            _buildSectionTitle('3. Selecciona el Día'),
-            _buildDateSelector(),
-            
-            // 4. Lista de Videos filtrados
-            Expanded(child: _buildFilteredHighlights()),
-          ],
+                  // Filtro Cancha
+                  _buildFilterChip(
+                    label: selectedCourt != null
+                        ? selectedCourt!['name']
+                        : 'Cancha',
+                    isActive: selectedCourt != null,
+                    onTap: _showCourtPicker,
+                    isEnabled: selectedComplex != null,
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Filtro Fecha
+                  _buildFilterChip(
+                    label: formattedDate,
+                    isActive: true,
+                    onTap: _selectDate,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Contenido Principal
+          Expanded(
+            child: selectedCourt == null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.sports_tennis_rounded,
+                            size: 64,
+                            color: Colors.grey[700],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            selectedComplex == null
+                                ? 'Selecciona un complejo para ver las jugadas'
+                                : 'Selecciona una cancha',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: selectedComplex == null
+                                ? _showComplexPicker
+                                : _showCourtPicker,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00FF88),
+                              foregroundColor: Colors.black,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                            child: Text(
+                              selectedComplex == null
+                                  ? 'Elegir Complejo'
+                                  : 'Elegir Cancha',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : _buildFilteredHighlights(),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00FF88))),
-    );
-  }
-
-  Widget _buildComplexSelector() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: supabase.from('complexes').select(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const CircularProgressIndicator();
-        final complexes = snapshot.data!;
-        return SizedBox(
-          height: 100,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: complexes.length,
-            itemBuilder: (context, index) {
-              final complex = complexes[index];
-              final isSelected = selectedComplex?['id'] == complex['id'];
-              return GestureDetector(
-                onTap: () => setState(() {
-                  selectedComplex = complex;
-                  selectedCourt = null;
-                }),
-                child: Container(
-                  width: 150,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF00FF88) : Colors.white.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: isSelected ? Colors.white : Colors.transparent),
-                  ),
-                  child: Center(
-                    child: Text(
-                      complex['name'],
-                      style: TextStyle(color: isSelected ? Colors.black : Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              );
-            },
+  Widget _buildFilterChip({
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+    bool isEnabled = true,
+  }) {
+    return GestureDetector(
+      onTap: isEnabled ? onTap : null,
+      child: Opacity(
+        opacity: isEnabled ? 1.0 : 0.4,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isActive
+                ? const Color(0xFF00FF88).withOpacity(0.15)
+                : const Color(0xFF262628),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: isActive ? const Color(0xFF00FF88) : Colors.white10,
+              width: 1,
+            ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCourtSelector() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: supabase.from('courts').select().eq('complex_id', selectedComplex!['id']),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox();
-        final courts = snapshot.data!;
-        return SizedBox(
-          height: 50,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: courts.length,
-            itemBuilder: (context, index) {
-              final court = courts[index];
-              final isSelected = selectedCourt?['id'] == court['id'];
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(court['name']),
-                  selected: isSelected,
-                  onSelected: (val) => setState(() => selectedCourt = court),
-                  selectedColor: const Color(0xFF00FF88),
-                  labelStyle: TextStyle(color: isSelected ? Colors.black : Colors.white),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? const Color(0xFF00FF88) : Colors.white70,
+                  fontSize: 13,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                 ),
-              );
-            },
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 16,
+                color: isActive ? const Color(0xFF00FF88) : Colors.white38,
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDateSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ListTile(
-        tileColor: Colors.white.withOpacity(0.05),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text('Fecha: ${selectedDate.toString().split(' ')[0]}'),
-        trailing: const Icon(Icons.calendar_month, color: Color(0xFF00FF88)),
-        onTap: () async {
-          final date = await showDatePicker(
-            context: context,
-            initialDate: selectedDate,
-            firstDate: DateTime(2024),
-            lastDate: DateTime.now(),
-          );
-          if (date != null) setState(() => selectedDate = date);
-        },
+        ),
       ),
     );
   }
 
   Widget _buildFilteredHighlights() {
-    final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day).toIso8601String();
-    final endOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, 23, 59, 59).toIso8601String();
+    // Convertir inicio y fin del día LOCAL a UTC para comparar correctamente
+    // con el created_at de Supabase (que está en UTC)
+    final startOfDay = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+    ).toUtc().toIso8601String();
+    final endOfDay = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      23,
+      59,
+      59,
+    ).toUtc().toIso8601String();
 
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: supabase
@@ -161,16 +439,54 @@ class _ExploreScreenState extends State<ExploreScreen> {
           .lte('created_at', endOfDay)
           .order('created_at', ascending: false),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
-        
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF00FF88)),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Error: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red),
+            ),
+          );
+        }
+
         final items = snapshot.data!;
-        if (items.isEmpty) return const Center(child: Text('No hay jugadas este día.'));
-        
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
+        if (items.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.video_camera_back_outlined,
+                  size: 48,
+                  color: Colors.grey[700],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'No hay jugadas grabadas este día.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.all(12),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 9 / 16,
+          ),
           itemCount: items.length,
-          itemBuilder: (context, index) => HighlightCard(item: items[index]),
+          itemBuilder: (context, index) => HighlightCard(
+            item: items[index],
+            autoPreload: index < 4,
+          ),
         );
       },
     );
