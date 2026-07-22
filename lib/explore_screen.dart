@@ -31,9 +31,11 @@ class ExploreScreenState extends State<ExploreScreen> {
     if (complex == null) return const SizedBox.shrink();
 
     final id = complex['id'].toString();
-    final imageUrl = complex['image_url'] ?? 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=150&q=80';
     final name = complex['name'] ?? '';
     final location = complex['location'] ?? 'Sin dirección';
+
+    // Asociar localmente Padel Hub a logo_club.png para prueba de visualización
+    final isPadelHub = name.toLowerCase().contains('padel hub');
 
     return ListenableBuilder(
       listenable: AppState(),
@@ -48,8 +50,10 @@ class ExploreScreenState extends State<ExploreScreen> {
               width: 1.5,
             ),
             image: DecorationImage(
-              image: NetworkImage(imageUrl),
-              fit: BoxFit.cover,
+              image: isPadelHub
+                  ? const AssetImage('edge_node/images/logo_club.png') as ImageProvider
+                  : NetworkImage(complex['image_url'] ?? 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=150&q=80'),
+              fit: isPadelHub ? BoxFit.contain : BoxFit.cover,
               colorFilter: ColorFilter.mode(
                 Colors.black.withOpacity(0.65),
                 BlendMode.darken,

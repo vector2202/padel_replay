@@ -30,7 +30,8 @@ def load_config():
         "camera_url": "http://192.168.0.22:8080/video",
         "supabase_url": "https://cwubftnikhgbspndecoc.supabase.co",
         "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3dWJmdG5pa2hnYnNwbmRlY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzM2NjksImV4cCI6MjA5MjcwOTY2OX0.Iej5JNLUipE2TYd1-3FRd0r1XdgBN2XIXIqgYtggptw",
-        "court_id": None
+        "court_id": None,
+        "buffer_seconds": 3,
     }
     
     # Si no existe el config.json, lo creamos para que el usuario pueda editarlo
@@ -146,7 +147,8 @@ else:
 # CONFIGURACIÓN DEL NODO EDGE
 # ==========================================
 RTSP_URL = _config["camera_url"]
-BUFFER_SECONDS = 3  # Ajustado a 30s para producción
+BUFFER_SECONDS = _config.get("buffer_seconds", 10)  # Configurable (ej. 10s para 2GB RAM)
+SHOW_PREVIEW = _config.get("show_preview", False)     # Configurable (False por defecto para headless en Pi)
 FPS = 30             
 MAX_FRAMES = BUFFER_SECONDS * FPS
 
@@ -354,46 +356,48 @@ def capture_loop():
         
         frame_buffer.append(frame)
         
-        preview = cv2.resize(frame, (640, 360))
-        cv2.putText(preview, f"Buffer: {len(frame_buffer)}/{MAX_FRAMES}", (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(preview, "App/API o 'ESPACIO' para Guardar. 'q' SALIR.", (10, 60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        
-        cv2.imshow("Pladel Replay - Edge Node", preview)
-        key = cv2.waitKey(1) & 0xFF
-        
-        if key == ord(' '): 
-            print("\n>>> TRIGGER DETECTADO VÍA TECLADO <<<")
-            user_ids = []
-            if COURT_ID:
-                try:
-                    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-                    response = supabase.table("check_ins") \
-                        .select("user_id") \
-                        .eq("court_id", COURT_ID) \
-                        .gte("scanned_at", one_hour_ago) \
-                        .execute()
-                    if response.data:
-                        user_ids = list(set([row["user_id"] for row in response.data]))
-                        print(f"[Teclado] Jugadores vinculados: {user_ids}")
-                except Exception as e:
-                    print(f"[Teclado Error] Error consultando check-ins: {e}")
+        if SHOW_PREVIEW:
+            preview = cv2.resize(frame, (640, 360))
+            cv2.putText(preview, f"Buffer: {len(frame_buffer)}/{MAX_FRAMES}", (10, 30), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(preview, "App/API o 'ESPACIO' para Guardar. 'q' SALIR.", (10, 60), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             
-            frames_copy = list(frame_buffer)
-            writer_thread = threading.Thread(
-                target=save_clip_worker, 
-                args=(frames_copy, cam_fps, width, height, user_ids, COURT_ID)
-            )
-            writer_thread.start()
+            cv2.imshow("Pladel Replay - Edge Node", preview)
+            key = cv2.waitKey(1) & 0xFF
+            
+            if key == ord(' '): 
+                print("\n>>> TRIGGER DETECTADO VÍA TECLADO <<<")
+                user_ids = []
+                if COURT_ID:
+                    try:
+                        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+                        response = supabase.table("check_ins") \
+                            .select("user_id") \
+                            .eq("court_id", COURT_ID) \
+                            .gte("scanned_at", one_hour_ago) \
+                            .execute()
+                        if response.data:
+                            user_ids = list(set([row["user_id"] for row in response.data]))
+                            print(f"[Teclado] Jugadores vinculados: {user_ids}")
+                    except Exception as e:
+                        print(f"[Teclado Error] Error consultando check-ins: {e}")
+                
+                frames_copy = list(frame_buffer)
+                writer_thread = threading.Thread(
+                    target=save_clip_worker, 
+                    args=(frames_copy, cam_fps, width, height, user_ids, COURT_ID)
+                )
+                writer_thread.start()
 
-        elif key == ord('q'): 
-            print("\n[Sistema] Cerrando aplicación...")
-            stop_event.set()
-            break
+            elif key == ord('q'): 
+                print("\n[Sistema] Cerrando aplicación...")
+                stop_event.set()
+                break
 
     cap.release()
-    cv2.destroyAllWindows()
+    if SHOW_PREVIEW:
+        cv2.destroyAllWindows()
 
 def heartbeat_loop():
     """
