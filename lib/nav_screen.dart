@@ -70,7 +70,9 @@ class _NavScreenState extends State<NavScreen> {
     }
 
     final courtId = court['id'];
-    String nodeAddress = AppState().edgeNodeIp.trim();
+    String nodeAddress = (court['node_ip'] as String?)?.isNotEmpty == true 
+        ? court['node_ip'] 
+        : AppState().edgeNodeIp.trim();
     
     // Si no tiene esquema, asumimos http y puerto 8000 si no tiene puerto
     if (!nodeAddress.startsWith('http')) {
