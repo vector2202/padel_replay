@@ -33,9 +33,9 @@ class ExploreScreenState extends State<ExploreScreen> {
     final id = complex['id'].toString();
     final name = complex['name'] ?? '';
     final location = complex['location'] ?? 'Sin dirección';
-
-    // Asociar localmente Padel Hub a logo_club.png para prueba de visualización
-    final isPadelHub = name.toLowerCase().contains('padel hub');
+    // Obtener la URL de imagen del complejo de forma dinámica desde Supabase
+    final imageUrl = complex['image_url'] as String?;
+    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
 
     return ListenableBuilder(
       listenable: AppState(),
@@ -50,10 +50,12 @@ class ExploreScreenState extends State<ExploreScreen> {
               width: 1.5,
             ),
             image: DecorationImage(
-              image: isPadelHub
-                  ? const AssetImage('edge_node/images/logo_club.png') as ImageProvider
-                  : NetworkImage(complex['image_url'] ?? 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=150&q=80'),
-              fit: isPadelHub ? BoxFit.contain : BoxFit.cover,
+              image: NetworkImage(
+                hasImage 
+                    ? imageUrl 
+                    : 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=150&q=80'
+              ),
+              fit: BoxFit.cover,
               colorFilter: ColorFilter.mode(
                 Colors.black.withOpacity(0.65),
                 BlendMode.darken,

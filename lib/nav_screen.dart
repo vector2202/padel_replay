@@ -50,7 +50,7 @@ class _NavScreenState extends State<NavScreen> {
   int _selectedIndex = 0;
 
   // IP corregida según tu terminal
-  String edgeNodeIp = "192.168.0.15";
+  String edgeNodeIp = "";
 
   Future<void> _triggerHighlight() async {
     debugPrint('>>> BOTÓN REPLAY PRESIONADO <<<');

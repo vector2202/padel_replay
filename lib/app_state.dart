@@ -9,7 +9,7 @@ class AppState extends ChangeNotifier {
   SharedPreferences? _prefs;
   Map<String, dynamic>? _activeCourt;
   DateTime? _sessionStartTime;
-  String _edgeNodeIp = "192.168.0.15"; // IP por defecto
+  String _edgeNodeIp = ""; // Se obtiene dinámicamente de Supabase según la cancha activa
   List<String> _favoriteComplexIds = [];
 
   String get edgeNodeIp => _edgeNodeIp;
@@ -17,7 +17,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    _edgeNodeIp = _prefs?.getString('edge_node_ip') ?? "192.168.0.15";
+    _edgeNodeIp = _prefs?.getString('edge_node_ip') ?? "";
     _favoriteComplexIds = _prefs?.getStringList('favorite_complex_ids') ?? [];
     notifyListeners();
   }
