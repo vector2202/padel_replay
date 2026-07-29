@@ -14,6 +14,14 @@ from supabase import create_client, Client
 import sys
 import json
 
+# Detectar soporte de GPIO (Raspberry Pi)
+try:
+    from gpiozero import Button
+    HAS_GPIO = True
+except (ImportError, Exception):
+    HAS_GPIO = False
+
+
 # --- CARGAR CONFIGURACIÓN ---
 def load_config():
     # Detectar si estamos corriendo como un ejecutable (.exe o binario)
@@ -27,11 +35,12 @@ def load_config():
     config_path = os.path.join(base_path, "config.json")
     
     default_config = {
-        "camera_url": "http://192.168.0.22:8080/video",
+        "camera_url": "rtsp://admin:Sportsgram1@192.168.1.216:554/cam/realmonitor?channel=1&subtype=1",
         "supabase_url": "https://cwubftnikhgbspndecoc.supabase.co",
         "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3dWJmdG5pa2hnYnNwbmRlY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzM2NjksImV4cCI6MjA5MjcwOTY2OX0.Iej5JNLUipE2TYd1-3FRd0r1XdgBN2XIXIqgYtggptw",
         "court_id": None,
-        "buffer_seconds": 3,
+        "buffer_seconds": 40,
+        "show_preview": False
     }
     
     # Si no existe el config.json, lo creamos para que el usuario pueda editarlo
@@ -251,8 +260,11 @@ def save_clip_worker(frames_to_save, fps, width, height, user_ids=None, court_id
     print(f"\n[Escritura] Recortando a 9:16 y guardando en {output_filename}...")
     start_time = time.time()
 
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
-    out = cv2.VideoWriter(output_filename, fourcc, fps, (target_w, target_h))
+    temp_filename = f"temp_{output_filename}"
+    
+    # Usamos 'mp4v' para el video temporal ya que es ampliamente soportado por OpenCV sin compresión excesiva
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_filename, fourcc, fps, (target_w, target_h))
 
     # --- Preparar logos escalados para este tamaño de video ---
     logo_size = int(target_w * 0.18)  # Aumentado a 18% del ancho del video para mayor visibilidad
@@ -279,6 +291,31 @@ def save_clip_worker(frames_to_save, fps, width, height, user_ids=None, court_id
         out.write(resized)
 
     out.release()
+    
+    # --- TRANSCODIFICACIÓN CON FFMEPG ---
+    # OpenCV en Linux no incluye codificador H.264 de calidad por temas de patentes.
+    # Usar FFmpeg del sistema nos garantiza máxima calidad (CRF 22) y compatibilidad total con iPhones/Android.
+    try:
+        import subprocess
+        print("[Escritura] Transcodificando a H.264 optimizado para web con FFmpeg...")
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', temp_filename,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',  # Rápido para la CPU de la Raspberry Pi
+            '-crf', '22',            # Calidad constante alta (valores menores = más calidad)
+            '-pix_fmt', 'yuv420p',   # Formato de color compatible con iOS/Safari
+            output_filename
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
+    except Exception as e:
+        print(f"[Advertencia] FFmpeg falló o no está instalado ({e}). Usando archivo original de OpenCV.")
+        if os.path.exists(output_filename):
+            os.remove(output_filename)
+        shutil.move(temp_filename, output_filename)
+
     elapsed = time.time() - start_time
     print(f"[Escritura] ¡Video procesado en {elapsed:.2f}s!\n")
     
@@ -447,6 +484,36 @@ def heartbeat_loop():
                 break
             time.sleep(1)
 
+def button_listener_loop():
+    """
+    Escucha en segundo plano los pulsos del botón físico conectado al GPIO 18.
+    """
+    if not HAS_GPIO:
+        print("[GPIO] ADVERTENCIA: gpiozero no disponible (Entorno no-Raspberry). Botón físico desactivado.")
+        return
+
+    BUTTON_PIN = 18
+    print(f"[GPIO] Inicializando escucha de botón físico en GPIO {BUTTON_PIN}...")
+
+    try:
+        button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.3)
+
+        def on_button_pressed():
+            print("\n>>> TRIGGER DETECTADO VÍA BOTÓN FÍSICO (GPIO 18) <<<")
+            trigger_clip()  # Llama al mismo handler que la API y la App
+
+        # Si el contacto es Normal Abierto (NO):
+        button.when_pressed = on_button_pressed
+        
+        # Si el contacto es Normal Cerrado (NC), descomentar la siguiente línea:
+        # button.when_released = on_button_pressed
+
+        while not stop_event.is_set():
+            time.sleep(1)
+            
+    except Exception as e:
+        print(f"[GPIO Error] No se pudo inicializar el botón físico: {e}")
+
 def run_api():
     """Ejecuta el servidor FastAPI en el puerto 8000"""
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
@@ -464,8 +531,12 @@ if __name__ == "__main__":
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
     heartbeat_thread.start()
     
+    # 3. Iniciar hilo del Botón Físico (GPIO)
+    button_thread = threading.Thread(target=button_listener_loop, daemon=True)
+    button_thread.start()
+    
     try:
-        # 3. Iniciar captura de video en hilo principal (Requisito de OpenCV en Mac)
+        # 4. Iniciar captura de video en hilo principal (Requisito de OpenCV en Mac)
         capture_loop()
         
     except KeyboardInterrupt:
@@ -473,3 +544,4 @@ if __name__ == "__main__":
         stop_event.set()
         
     print("[Sistema] Programa finalizado.")
+
