@@ -313,11 +313,11 @@ class _HighlightCardState extends State<HighlightCard> {
     try {
       final filePath = await _downloadVideo();
       if (filePath != null && await File(filePath).exists()) {
-        await Gal.putVideo(filePath, album: 'Padel Snap');
+        await Gal.putVideo(filePath, album: 'Sportsgram');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('¡Video guardado en la galería!'),
+              content: Text('✅ Video guardado en tu galería en el álbum Sportsgram'),
               backgroundColor: Colors.green,
             ),
           );
@@ -351,7 +351,7 @@ class _HighlightCardState extends State<HighlightCard> {
       if (filePath != null && await File(filePath).exists()) {
         await Share.shareXFiles([
           XFile(filePath),
-        ], text: '¡Mira mi jugada en Padel Snap! ⚽🔥');
+        ], text: '¡Mira mi jugada en Sportsgram! 🎾🔥');
       } else {
         throw Exception('El archivo no se pudo crear');
       }

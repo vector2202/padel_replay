@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:padel_snap/login_screen.dart';
+import 'package:sportsgram/login_screen.dart';
 
 void main() {
   testWidgets('LoginScreen toggles between Sign In and Sign Up modes', (WidgetTester tester) async {

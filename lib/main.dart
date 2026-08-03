@@ -14,16 +14,16 @@ void main() async {
 
   await AppState().init();
 
-  runApp(const PadelSnapApp());
+  runApp(const SportsgramApp());
 }
 
-class PadelSnapApp extends StatelessWidget {
-  const PadelSnapApp({super.key});
+class SportsgramApp extends StatelessWidget {
+  const SportsgramApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Padel Snap',
+      title: 'Sportsgram',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

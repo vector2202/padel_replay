@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:padel_snap/app_state.dart';
+import 'package:sportsgram/app_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

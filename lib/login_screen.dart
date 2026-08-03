@@ -73,9 +73,15 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'PADEL\nSNAP',
+                'SPORTSGRAM',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, height: 0.9, letterSpacing: -2),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2.0,
+                  height: 1.1,
+                ),
               ),
               const SizedBox(height: 48),
               if (_isSignUp) ...[
