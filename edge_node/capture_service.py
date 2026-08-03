@@ -43,7 +43,7 @@ def load_config():
         "supabase_url": "https://cwubftnikhgbspndecoc.supabase.co",
         "supabase_key": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3dWJmdG5pa2hnYnNwbmRlY29jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzM2NjksImV4cCI6MjA5MjcwOTY2OX0.Iej5JNLUipE2TYd1-3FRd0r1XdgBN2XIXIqgYtggptw",
         "court_id": None,
-        "buffer_seconds": 40
+        "buffer_seconds": 10
     }
     
     if not os.path.exists(config_path):
@@ -128,7 +128,7 @@ def overlay_logo(frame, logo_bgr, logo_alpha, x, y):
 # CONFIGURACIÓN DEL NODO EDGE
 # ==========================================
 RTSP_URL = _config["camera_url"]
-BUFFER_SECONDS = _config.get("buffer_seconds", 40)
+BUFFER_SECONDS = _config.get("buffer_seconds", 10)
 FPS = 30             
 MAX_FRAMES = BUFFER_SECONDS * FPS
 

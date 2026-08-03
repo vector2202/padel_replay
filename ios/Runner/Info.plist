@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Padel Snap</string>
+	<string>Sportsgram</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>padel_snap</string>
+	<string>sportsgram</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -35,12 +35,12 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera to scan codes.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Padel Snap needs access to your photo library to save and view your recorded plays.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Padel Snap saves your recorded plays directly to your photo library.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs access to the local network to connect to the Edge Node.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Sportsgram saves your recorded plays directly to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Sportsgram needs access to your photo library to save and view your recorded plays.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -68,6 +68,8 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>UIStatusBarHidden</key>
+	<false/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
